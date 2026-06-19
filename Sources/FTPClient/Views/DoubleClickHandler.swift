@@ -27,12 +27,11 @@ struct DoubleClickHandler: NSViewRepresentable {
             super.init()
             monitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseDown) { [weak self] event in
                 guard let self, event.clickCount == 2 else { return event }
-                guard let window = self.view.window else { return event }
                 let pt = self.view.convert(event.locationInWindow, from: nil)
                 if self.view.bounds.contains(pt) {
                     self.onDoubleClick()
                 }
-                return event   // イベントはそのまま流してTableの選択も維持
+                return event
             }
         }
 
