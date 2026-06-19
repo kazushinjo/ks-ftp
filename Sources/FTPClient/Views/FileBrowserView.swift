@@ -21,7 +21,7 @@ struct FileBrowserView: View {
 
     private func openSelectedDirectory() {
         guard let file = selectedDirectoryFile else { return }
-        Task { await appState.openItem(file) }
+        appState.openItem(file)
     }
 
     var body: some View {
@@ -212,13 +212,10 @@ struct FileBrowserView: View {
                 .onChange(of: sortOrder) { _, newOrder in
                     appState.remoteFiles.sort(using: newOrder)
                 }
-                .simultaneousGesture(
-                    TapGesture(count: 2).onEnded { openSelectedDirectory() }
-                )
                 .contextMenu(forSelectionType: String.self) { ids in
                     let files = appState.remoteFiles.filter { ids.contains($0.id) }
                     if let file = files.first, file.isDirectory {
-                        Button("開く") { Task { await appState.openItem(file) } }
+                        Button("開く") { appState.openItem(file) }
                     }
                     if !files.filter({ !$0.isDirectory }).isEmpty {
                         Button("ダウンロード") {
@@ -234,9 +231,7 @@ struct FileBrowserView: View {
                     guard let id = ids.first,
                           let file = appState.remoteFiles.first(where: { $0.id == id })
                     else { return }
-                    if file.isDirectory {
-                        Task { await appState.openItem(file) }
-                    }
+                    appState.openItem(file)
                 }
                 .dropDestination(for: URL.self) { urls, _ in
                     Task { await appState.uploadFiles(urls) }

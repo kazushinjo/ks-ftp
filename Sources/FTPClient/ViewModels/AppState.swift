@@ -139,10 +139,10 @@ class AppState: ObservableObject {
         await navigateTo(path: parent.isEmpty ? "/" : "/" + parent + "/")
     }
 
-    func openItem(_ file: RemoteFile) async {
+    func openItem(_ file: RemoteFile) {
         guard file.isDirectory else { return }
         debugLog("openItem: \(file.path)")
-        await navigateTo(path: file.path)
+        Task { await navigateTo(path: file.path) }
     }
 
     private func debugLog(_ msg: String) {
