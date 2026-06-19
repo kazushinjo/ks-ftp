@@ -203,6 +203,29 @@ struct FileBrowserView: View {
                 .onChange(of: sortOrder) { _, newOrder in
                     appState.remoteFiles.sort(using: newOrder)
                 }
+                .contextMenu(forSelectionType: String.self) { ids in
+                    let files = appState.remoteFiles.filter { ids.contains($0.id) }
+                    if let file = files.first, file.isDirectory {
+                        Button("開く") { Task { await appState.openItem(file) } }
+                    }
+                    if !files.filter({ !$0.isDirectory }).isEmpty {
+                        Button("ダウンロード") {
+                            Task { await appState.downloadFiles(files) }
+                        }
+                    }
+                    Divider()
+                    Button("削除", role: .destructive) {
+                        selectedFiles = ids
+                        showingDeleteConfirm = true
+                    }
+                } primaryAction: { ids in
+                    guard let id = ids.first,
+                          let file = appState.remoteFiles.first(where: { $0.id == id })
+                    else { return }
+                    if file.isDirectory {
+                        Task { await appState.openItem(file) }
+                    }
+                }
                 .dropDestination(for: URL.self) { urls, _ in
                     Task { await appState.uploadFiles(urls) }
                     return true
