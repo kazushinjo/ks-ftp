@@ -11,6 +11,19 @@ struct FileBrowserView: View {
     @State private var isDropTarget = false
     @State private var sortOrder = [KeyPathComparator(\RemoteFile.name)]
 
+    // 現在選択中のディレクトリファイル（なければnil）
+    private var selectedDirectoryFile: RemoteFile? {
+        guard let id = selectedFiles.first,
+              let file = appState.remoteFiles.first(where: { $0.id == id }),
+              file.isDirectory else { return nil }
+        return file
+    }
+
+    private func openSelectedDirectory() {
+        guard let file = selectedDirectoryFile else { return }
+        Task { await appState.openItem(file) }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -89,37 +102,33 @@ struct FileBrowserView: View {
             Divider().frame(height: 20)
 
             Group {
-                if !selectedFiles.isEmpty {
-                    // 選択アイテムを開く（フォルダ移動）
-                    if let file = appState.remoteFiles.first(where: { selectedFiles.contains($0.id) }),
-                       file.isDirectory {
-                        Button(action: { Task { await appState.openItem(file) } }) {
-                            Label("開く", systemImage: "arrow.right.circle")
-                        }
-                    }
-
-                    Button(action: {
-                        let files = appState.remoteFiles.filter { selectedFiles.contains($0.id) }
-                        Task { await appState.downloadFiles(files) }
-                    }) {
-                        Label("ダウンロード", systemImage: "arrow.down.to.line")
-                    }
-
-                    Button(role: .destructive, action: { showingDeleteConfirm = true }) {
-                        Image(systemName: "trash")
-                            .foregroundStyle(.red)
-                    }
-
-                    Divider().frame(height: 20)
+                // 開く（フォルダ選択時に有効）
+                Button(action: { openSelectedDirectory() }) {
+                    Label("開く", systemImage: "arrow.right.circle")
                 }
+                .disabled(selectedDirectoryFile == nil)
+
+                // ダウンロード（ファイル選択時に有効）
+                Button(action: {
+                    let files = appState.remoteFiles.filter { selectedFiles.contains($0.id) }
+                    Task { await appState.downloadFiles(files) }
+                }) {
+                    Label("ダウンロード", systemImage: "arrow.down.to.line")
+                }
+                .disabled(selectedFiles.isEmpty)
+
+                Button(role: .destructive, action: { showingDeleteConfirm = true }) {
+                    Image(systemName: "trash").foregroundStyle(.red)
+                }
+                .disabled(selectedFiles.isEmpty)
+
+                Divider().frame(height: 20)
 
                 Button(action: { showingCreateFolder = true }) {
                     Image(systemName: "folder.badge.plus")
                 }
 
-                Button(action: {
-                    Task { await appState.showUploadPanel() }
-                }) {
+                Button(action: { Task { await appState.showUploadPanel() } }) {
                     Image(systemName: "arrow.up.to.line")
                 }
             }
@@ -203,6 +212,9 @@ struct FileBrowserView: View {
                 .onChange(of: sortOrder) { _, newOrder in
                     appState.remoteFiles.sort(using: newOrder)
                 }
+                .simultaneousGesture(
+                    TapGesture(count: 2).onEnded { openSelectedDirectory() }
+                )
                 .contextMenu(forSelectionType: String.self) { ids in
                     let files = appState.remoteFiles.filter { ids.contains($0.id) }
                     if let file = files.first, file.isDirectory {

@@ -140,8 +140,20 @@ class AppState: ObservableObject {
     }
 
     func openItem(_ file: RemoteFile) async {
-        if file.isDirectory {
-            await navigateTo(path: file.path)
+        guard file.isDirectory else { return }
+        debugLog("openItem: \(file.path)")
+        await navigateTo(path: file.path)
+    }
+
+    private func debugLog(_ msg: String) {
+        let line = "[AppState] \(msg)\n"
+        let url = URL(fileURLWithPath: "/tmp/ks-ftp-debug.log")
+        if let data = line.data(using: .utf8) {
+            if let fh = try? FileHandle(forWritingTo: url) {
+                fh.seekToEndOfFile(); fh.write(data); fh.closeFile()
+            } else {
+                try? data.write(to: url)
+            }
         }
     }
 
