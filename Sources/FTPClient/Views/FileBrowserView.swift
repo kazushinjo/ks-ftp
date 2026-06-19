@@ -211,6 +211,7 @@ struct FileBrowserView: View {
                 .onChange(of: sortOrder) { _, newOrder in
                     appState.remoteFiles.sort(using: newOrder)
                 }
+                .background(DoubleClickHandler(onDoubleClick: openSelectedDirectory))
                 .contextMenu(forSelectionType: String.self) { ids in
                     let files = appState.remoteFiles.filter { ids.contains($0.id) }
                     if let file = files.first, file.isDirectory {
