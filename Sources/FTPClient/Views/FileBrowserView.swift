@@ -4,7 +4,6 @@ import AppKit
 struct FileBrowserView: View {
     @EnvironmentObject var appState: AppState
     @Binding var showTransferPanel: Bool
-    @State private var selectedFiles = Set<String>()
     @State private var showingCreateFolder = false
     @State private var newFolderName = ""
     @State private var showingDeleteConfirm = false
@@ -13,7 +12,7 @@ struct FileBrowserView: View {
 
     // 現在選択中のディレクトリファイル（なければnil）
     private var selectedDirectoryFile: RemoteFile? {
-        guard let id = selectedFiles.first,
+        guard let id = appState.remoteSelectedFiles.first,
               let file = appState.remoteFiles.first(where: { $0.id == id }),
               file.isDirectory else { return nil }
         return file
@@ -53,13 +52,13 @@ struct FileBrowserView: View {
             Button("キャンセル", role: .cancel) { newFolderName = "" }
         }
         .confirmationDialog(
-            "\(selectedFiles.count)個のアイテムを削除しますか？\nこの操作は元に戻せません。",
+            "\(appState.remoteSelectedFiles.count)個のアイテムを削除しますか？\nこの操作は元に戻せません。",
             isPresented: $showingDeleteConfirm,
             titleVisibility: .visible
         ) {
             Button("削除", role: .destructive) {
-                let toDelete = appState.remoteFiles.filter { selectedFiles.contains($0.id) }
-                selectedFiles = []
+                let toDelete = appState.remoteFiles.filter { appState.remoteSelectedFiles.contains($0.id) }
+                appState.remoteSelectedFiles = []
                 Task { await appState.deleteItems(toDelete) }
             }
             Button("キャンセル", role: .cancel) {}
@@ -110,17 +109,17 @@ struct FileBrowserView: View {
 
                 // ダウンロード（ファイル選択時に有効）
                 Button(action: {
-                    let files = appState.remoteFiles.filter { selectedFiles.contains($0.id) }
+                    let files = appState.remoteFiles.filter { appState.remoteSelectedFiles.contains($0.id) }
                     Task { await appState.downloadFiles(files) }
                 }) {
                     Label("ダウンロード", systemImage: "arrow.down.to.line")
                 }
-                .disabled(selectedFiles.isEmpty)
+                .disabled(appState.remoteSelectedFiles.isEmpty)
 
                 Button(role: .destructive, action: { showingDeleteConfirm = true }) {
                     Image(systemName: "trash").foregroundStyle(.red)
                 }
-                .disabled(selectedFiles.isEmpty)
+                .disabled(appState.remoteSelectedFiles.isEmpty)
 
                 Divider().frame(height: 20)
 
@@ -166,7 +165,7 @@ struct FileBrowserView: View {
             if appState.remoteFiles.isEmpty {
                 emptyState
             } else {
-                Table(appState.remoteFiles, selection: $selectedFiles, sortOrder: $sortOrder) {
+                Table(appState.remoteFiles, selection: $appState.remoteSelectedFiles, sortOrder: $sortOrder) {
                     TableColumn("名前", value: \.name) { file in
                         HStack(spacing: 6) {
                             Image(systemName: file.systemIcon)
@@ -224,7 +223,7 @@ struct FileBrowserView: View {
                     }
                     Divider()
                     Button("削除", role: .destructive) {
-                        selectedFiles = ids
+                        appState.remoteSelectedFiles = ids
                         showingDeleteConfirm = true
                     }
                 } primaryAction: { ids in

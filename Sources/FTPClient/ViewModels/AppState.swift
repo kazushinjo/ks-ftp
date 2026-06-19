@@ -13,6 +13,9 @@ class AppState: ObservableObject {
     @Published var errorMessage: String?
     @Published var transfers: [TransferItem] = []
 
+    // Remote selection
+    @Published var remoteSelectedFiles = Set<String>()
+
     // Local
     @Published var localFiles: [LocalFile] = []
     @Published var localCurrentURL: URL = FileManager.default.homeDirectoryForCurrentUser
@@ -102,6 +105,7 @@ class AppState: ObservableObject {
         do {
             let files = try await FTPService.listDirectory(profile: profile, path: path)
             remoteFiles = files
+            remoteSelectedFiles = []
             currentPath = path.hasSuffix("/") ? path : path + "/"
         } catch {
             errorMessage = error.localizedDescription
