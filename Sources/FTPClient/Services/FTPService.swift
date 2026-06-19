@@ -53,8 +53,8 @@ struct FTPService {
     static func buildURL(profile: ConnectionProfile, path: String) -> String {
         let user = profile.username.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? profile.username
         let pass = profile.password.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? profile.password
-        let normalizedPath = path.hasPrefix("/") ? path : "/" + path
-        // スペース・日本語などをURLエンコード（/はそのまま保持）
+        let trimmed = path.trimmingCharacters(in: .whitespaces)
+        let normalizedPath = trimmed.hasPrefix("/") ? trimmed : "/" + trimmed
         let encodedPath = normalizedPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedPath
         return "\(profile.protocolType.scheme)://\(user):\(pass)@\(profile.host):\(profile.port)\(encodedPath)"
     }

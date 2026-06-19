@@ -80,7 +80,8 @@ class AppState: ObservableObject {
 
     func connect(to profile: ConnectionProfile) async {
         selectedProfile = profile
-        let startPath = profile.initialPath.isEmpty ? "/" : profile.initialPath
+        let raw = profile.initialPath.trimmingCharacters(in: .whitespaces)
+        let startPath = raw.isEmpty ? "/" : raw
         pathHistory = [startPath]
         historyIndex = 0
         await loadDirectory(path: startPath)
