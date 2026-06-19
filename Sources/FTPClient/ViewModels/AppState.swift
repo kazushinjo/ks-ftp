@@ -186,6 +186,32 @@ class AppState: ObservableObject {
         }
     }
 
+    // MARK: - Local File Operations
+
+    func createLocalDirectory(name: String) {
+        let url = localCurrentURL.appendingPathComponent(name)
+        do {
+            try FileManager.default.createDirectory(at: url, withIntermediateDirectories: false)
+            loadLocalDirectory(url: localCurrentURL)
+        } catch {
+            errorMessage = "フォルダ作成に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteLocalItems(_ files: [LocalFile]) {
+        var failed = false
+        for file in files {
+            do {
+                try FileManager.default.trashItem(at: file.url, resultingItemURL: nil)
+            } catch {
+                errorMessage = "削除に失敗しました: \(error.localizedDescription)"
+                failed = true
+            }
+        }
+        localSelectedFiles = []
+        loadLocalDirectory(url: localCurrentURL)
+    }
+
     func revealInFinder(_ file: LocalFile) {
         NSWorkspace.shared.activateFileViewerSelecting([file.url])
     }

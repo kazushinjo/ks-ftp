@@ -3,6 +3,9 @@ import SwiftUI
 struct LocalFileBrowserView: View {
     @EnvironmentObject var appState: AppState
     @State private var sortOrder = [KeyPathComparator(\LocalFile.name)]
+    @State private var showingCreateFolder = false
+    @State private var newFolderName = ""
+    @State private var showingDeleteConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -13,6 +16,25 @@ struct LocalFileBrowserView: View {
             } else {
                 fileTable
             }
+        }
+        .alert("フォルダを作成", isPresented: $showingCreateFolder) {
+            TextField("フォルダ名", text: $newFolderName)
+            Button("作成") {
+                let n = newFolderName; newFolderName = ""
+                appState.createLocalDirectory(name: n)
+            }
+            Button("キャンセル", role: .cancel) { newFolderName = "" }
+        }
+        .confirmationDialog(
+            "\(appState.localSelectedFiles.count)個のアイテムをゴミ箱に移動しますか？",
+            isPresented: $showingDeleteConfirm,
+            titleVisibility: .visible
+        ) {
+            Button("ゴミ箱に移動", role: .destructive) {
+                let files = appState.localFiles.filter { appState.localSelectedFiles.contains($0.id) }
+                appState.deleteLocalItems(files)
+            }
+            Button("キャンセル", role: .cancel) {}
         }
     }
 
@@ -80,6 +102,22 @@ struct LocalFileBrowserView: View {
                 .buttonStyle(.borderless)
                 .foregroundStyle(Color.accentColor)
             }
+
+            Divider().frame(height: 20)
+
+            // フォルダ作成
+            Button(action: { showingCreateFolder = true }) {
+                Image(systemName: "folder.badge.plus")
+            }
+            .buttonStyle(.borderless)
+
+            // 削除（ゴミ箱）
+            Button(role: .destructive, action: { showingDeleteConfirm = true }) {
+                Image(systemName: "trash")
+                    .foregroundColor(appState.localSelectedFiles.isEmpty ? .secondary : .red)
+            }
+            .buttonStyle(.borderless)
+            .disabled(appState.localSelectedFiles.isEmpty)
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -131,6 +169,11 @@ struct LocalFileBrowserView: View {
                     appState.localSelectedFiles = ids
                     Task { await appState.uploadSelectedLocalFiles() }
                 }
+            }
+            Divider()
+            Button("ゴミ箱に移動", role: .destructive) {
+                appState.localSelectedFiles = ids
+                showingDeleteConfirm = true
             }
         } primaryAction: { ids in
             if let id = ids.first,
