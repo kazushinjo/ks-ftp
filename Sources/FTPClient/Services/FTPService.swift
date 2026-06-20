@@ -215,7 +215,7 @@ struct FTPService {
                     let stdout = String(data: stdoutPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
                     let stderr = String(data: stderrPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
                     let exitCode = process.terminationStatus
-                    let log = "CMD: \(executable) \(args.joined(separator: " "))\nEXIT: \(exitCode)\nSTDOUT: \(stdout.prefix(200))\nSTDERR: \(stderr.prefix(200))\n---\n"
+                    let log = "CMD: \(executable) \(args.joined(separator: " "))\nEXIT: \(exitCode)\nSTDOUT: \(stdout.prefix(500))\nSTDERR: \(stderr.prefix(200))\n---\n"
                     try? log.appendTo(url: URL(fileURLWithPath: "/tmp/ks-ftp-debug.log"))
                     cont.resume(returning: (stdout, stderr, exitCode))
                 } catch {

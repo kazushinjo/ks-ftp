@@ -257,9 +257,13 @@ class AppState: ObservableObject {
         defer { isUploading = false }
 
         for localURL in localURLs {
-            let remotePath = currentPath + localURL.lastPathComponent
+            // NFC normalize: macOS FileManager returns NFD paths, but Linux FTP servers
+            // store filenames as NFC. Without normalization, the same filename gets
+            // different byte sequences, creating duplicate entries on the server.
+            let remoteName = localURL.lastPathComponent.precomposedStringWithCanonicalMapping
+            let remotePath = currentPath + remoteName
             let idx = transfers.count
-            transfers.append(TransferItem(name: localURL.lastPathComponent, isUpload: true, status: .inProgress))
+            transfers.append(TransferItem(name: remoteName, isUpload: true, status: .inProgress))
 
             do {
                 try await FTPService.upload(profile: profile, localURL: localURL, remotePath: remotePath)
@@ -270,6 +274,7 @@ class AppState: ObservableObject {
             }
         }
 
+        localSelectedFiles = []
         await loadDirectory(path: currentPath)
     }
 
@@ -298,9 +303,10 @@ class AppState: ObservableObject {
 
     func createRemoteFile(name: String) async {
         guard let profile = selectedProfile else { return }
-        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+        let normalizedName = name.precomposedStringWithCanonicalMapping
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(normalizedName)
         try? Data().write(to: tmp)
-        let remotePath = currentPath + name
+        let remotePath = currentPath + normalizedName
         do {
             try await FTPService.upload(profile: profile, localURL: tmp, remotePath: remotePath)
             try? FileManager.default.removeItem(at: tmp)
