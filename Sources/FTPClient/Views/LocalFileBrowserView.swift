@@ -1,11 +1,9 @@
 import SwiftUI
+import AppKit
 
 struct LocalFileBrowserView: View {
     @EnvironmentObject var appState: AppState
     @State private var sortOrder = [KeyPathComparator(\LocalFile.name)]
-    @State private var showingCreateFolder = false
-    @State private var newFolderName = ""
-    @State private var showingDeleteConfirm = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -17,25 +15,52 @@ struct LocalFileBrowserView: View {
                 fileTable
             }
         }
-        .alert("フォルダを作成", isPresented: $showingCreateFolder) {
-            TextField("フォルダ名", text: $newFolderName)
-            Button("作成") {
-                let n = newFolderName; newFolderName = ""
-                appState.createLocalDirectory(name: n)
-            }
-            Button("キャンセル", role: .cancel) { newFolderName = "" }
-        }
-        .confirmationDialog(
-            "\(appState.localSelectedFiles.count)個のアイテムをゴミ箱に移動しますか？",
-            isPresented: $showingDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("ゴミ箱に移動", role: .destructive) {
-                let files = appState.localFiles.filter { appState.localSelectedFiles.contains($0.id) }
-                appState.deleteLocalItems(files)
-            }
-            Button("キャンセル", role: .cancel) {}
-        }
+    }
+
+    private func showCreateFolderDialog() {
+        let alert = NSAlert()
+        alert.messageText = "新規フォルダ"
+        alert.informativeText = "作成するフォルダ名を入力してください"
+        alert.addButton(withTitle: "作成")
+        alert.addButton(withTitle: "キャンセル")
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        tf.placeholderString = "フォルダ名"
+        alert.accessoryView = tf
+        alert.window.initialFirstResponder = tf
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        appState.createLocalDirectory(name: name)
+    }
+
+    private func showCreateFileDialog() {
+        let alert = NSAlert()
+        alert.messageText = "新規ファイル"
+        alert.informativeText = "作成するファイル名を入力してください"
+        alert.addButton(withTitle: "作成")
+        alert.addButton(withTitle: "キャンセル")
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        tf.placeholderString = "ファイル名"
+        alert.accessoryView = tf
+        alert.window.initialFirstResponder = tf
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        appState.createLocalFile(name: name)
+    }
+
+    private func showDeleteConfirmDialog() {
+        let count = appState.localSelectedFiles.count
+        guard count > 0 else { return }
+        let alert = NSAlert()
+        alert.messageText = "\(count)個のアイテムをゴミ箱に移動しますか？"
+        alert.informativeText = "この操作はゴミ箱から元に戻せます。"
+        alert.addButton(withTitle: "ゴミ箱に移動")
+        alert.addButton(withTitle: "キャンセル")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let files = appState.localFiles.filter { appState.localSelectedFiles.contains($0.id) }
+        appState.deleteLocalItems(files)
     }
 
     // MARK: - Toolbar
@@ -106,13 +131,13 @@ struct LocalFileBrowserView: View {
             Divider().frame(height: 20)
 
             // フォルダ作成
-            Button(action: { showingCreateFolder = true }) {
+            Button(action: { showCreateFolderDialog() }) {
                 Image(systemName: "folder.badge.plus")
             }
             .buttonStyle(.borderless)
 
             // 削除（ゴミ箱）
-            Button(role: .destructive, action: { showingDeleteConfirm = true }) {
+            Button(action: { showDeleteConfirmDialog() }) {
                 Image(systemName: "trash")
                     .foregroundColor(appState.localSelectedFiles.isEmpty ? .secondary : .red)
             }
@@ -160,6 +185,9 @@ struct LocalFileBrowserView: View {
             appState.localFiles = appState.localFiles.sorted(using: newOrder)
         }
         .contextMenu(forSelectionType: String.self) { ids in
+            Button("新規フォルダ") { showCreateFolderDialog() }
+            Button("新規ファイル") { showCreateFileDialog() }
+            Divider()
             let files = appState.localFiles.filter { ids.contains($0.id) }
             if let file = files.first {
                 Button("Finderで表示") { appState.revealInFinder(file) }
@@ -170,10 +198,12 @@ struct LocalFileBrowserView: View {
                     Task { await appState.uploadSelectedLocalFiles() }
                 }
             }
-            Divider()
-            Button("ゴミ箱に移動", role: .destructive) {
-                appState.localSelectedFiles = ids
-                showingDeleteConfirm = true
+            if !ids.isEmpty {
+                Divider()
+                Button("ゴミ箱に移動", role: .destructive) {
+                    appState.localSelectedFiles = ids
+                    showDeleteConfirmDialog()
+                }
             }
         } primaryAction: { ids in
             if let id = ids.first,

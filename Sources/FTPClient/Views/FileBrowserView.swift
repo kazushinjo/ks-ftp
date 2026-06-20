@@ -4,9 +4,6 @@ import AppKit
 struct FileBrowserView: View {
     @EnvironmentObject var appState: AppState
     @Binding var showTransferPanel: Bool
-    @State private var showingCreateFolder = false
-    @State private var newFolderName = ""
-    @State private var showingDeleteConfirm = false
     @State private var isDropTarget = false
     @State private var sortOrder = [KeyPathComparator(\RemoteFile.name)]
 
@@ -21,6 +18,53 @@ struct FileBrowserView: View {
     private func openSelectedDirectory() {
         guard let file = selectedDirectoryFile else { return }
         appState.openItem(file)
+    }
+
+    private func showCreateFolderDialog() {
+        let alert = NSAlert()
+        alert.messageText = "新規フォルダ"
+        alert.informativeText = "作成するフォルダ名を入力してください"
+        alert.addButton(withTitle: "作成")
+        alert.addButton(withTitle: "キャンセル")
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        tf.placeholderString = "フォルダ名"
+        alert.accessoryView = tf
+        alert.window.initialFirstResponder = tf
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        Task { await appState.createDirectory(name: name) }
+    }
+
+    private func showCreateFileDialog() {
+        let alert = NSAlert()
+        alert.messageText = "新規ファイル"
+        alert.informativeText = "作成するファイル名を入力してください"
+        alert.addButton(withTitle: "作成")
+        alert.addButton(withTitle: "キャンセル")
+        let tf = NSTextField(frame: NSRect(x: 0, y: 0, width: 260, height: 24))
+        tf.placeholderString = "ファイル名"
+        alert.accessoryView = tf
+        alert.window.initialFirstResponder = tf
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let name = tf.stringValue.trimmingCharacters(in: .whitespaces)
+        guard !name.isEmpty else { return }
+        Task { await appState.createRemoteFile(name: name) }
+    }
+
+    private func showDeleteConfirmDialog() {
+        let count = appState.remoteSelectedFiles.count
+        guard count > 0 else { return }
+        let alert = NSAlert()
+        alert.messageText = "\(count)個のアイテムを削除しますか？"
+        alert.informativeText = "この操作は元に戻せません。"
+        alert.addButton(withTitle: "削除")
+        alert.addButton(withTitle: "キャンセル")
+        alert.alertStyle = .warning
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        let toDelete = appState.remoteFiles.filter { appState.remoteSelectedFiles.contains($0.id) }
+        appState.remoteSelectedFiles = []
+        Task { await appState.deleteItems(toDelete) }
     }
 
     var body: some View {
@@ -42,27 +86,6 @@ struct FileBrowserView: View {
 
         }
         .navigationTitle(appState.selectedProfile?.name ?? "")
-        .alert("フォルダを作成", isPresented: $showingCreateFolder) {
-            TextField("フォルダ名", text: $newFolderName)
-            Button("作成") {
-                let n = newFolderName
-                newFolderName = ""
-                Task { await appState.createDirectory(name: n) }
-            }
-            Button("キャンセル", role: .cancel) { newFolderName = "" }
-        }
-        .confirmationDialog(
-            "\(appState.remoteSelectedFiles.count)個のアイテムを削除しますか？\nこの操作は元に戻せません。",
-            isPresented: $showingDeleteConfirm,
-            titleVisibility: .visible
-        ) {
-            Button("削除", role: .destructive) {
-                let toDelete = appState.remoteFiles.filter { appState.remoteSelectedFiles.contains($0.id) }
-                appState.remoteSelectedFiles = []
-                Task { await appState.deleteItems(toDelete) }
-            }
-            Button("キャンセル", role: .cancel) {}
-        }
     }
 
     // MARK: - Toolbar
@@ -116,14 +139,14 @@ struct FileBrowserView: View {
                 }
                 .disabled(appState.remoteSelectedFiles.isEmpty)
 
-                Button(role: .destructive, action: { showingDeleteConfirm = true }) {
+                Button(role: .destructive, action: { showDeleteConfirmDialog() }) {
                     Image(systemName: "trash").foregroundStyle(.red)
                 }
                 .disabled(appState.remoteSelectedFiles.isEmpty)
 
                 Divider().frame(height: 20)
 
-                Button(action: { showingCreateFolder = true }) {
+                Button(action: { showCreateFolderDialog() }) {
                     Image(systemName: "folder.badge.plus")
                 }
 
@@ -213,6 +236,9 @@ struct FileBrowserView: View {
                 }
                 .background(DoubleClickHandler(onDoubleClick: openSelectedDirectory))
                 .contextMenu(forSelectionType: String.self) { ids in
+                    Button("新規フォルダ") { showCreateFolderDialog() }
+                    Button("新規ファイル") { showCreateFileDialog() }
+                    Divider()
                     let files = appState.remoteFiles.filter { ids.contains($0.id) }
                     if let file = files.first, file.isDirectory {
                         Button("開く") { appState.openItem(file) }
@@ -222,10 +248,12 @@ struct FileBrowserView: View {
                             Task { await appState.downloadFiles(files) }
                         }
                     }
-                    Divider()
-                    Button("削除", role: .destructive) {
-                        appState.remoteSelectedFiles = ids
-                        showingDeleteConfirm = true
+                    if !ids.isEmpty {
+                        Divider()
+                        Button("削除", role: .destructive) {
+                            appState.remoteSelectedFiles = ids
+                            showDeleteConfirmDialog()
+                        }
                     }
                 } primaryAction: { ids in
                     guard let id = ids.first,

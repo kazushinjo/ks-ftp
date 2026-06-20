@@ -198,6 +198,16 @@ class AppState: ObservableObject {
         }
     }
 
+    func createLocalFile(name: String) {
+        let url = localCurrentURL.appendingPathComponent(name)
+        do {
+            try Data().write(to: url)
+            loadLocalDirectory(url: localCurrentURL)
+        } catch {
+            errorMessage = "ファイル作成に失敗しました: \(error.localizedDescription)"
+        }
+    }
+
     func deleteLocalItems(_ files: [LocalFile]) {
         var failed = false
         for file in files {
@@ -281,6 +291,21 @@ class AppState: ObservableObject {
     }
 
     // MARK: - File Operations
+
+    func createRemoteFile(name: String) async {
+        guard let profile = selectedProfile else { return }
+        let tmp = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent(name)
+        try? Data().write(to: tmp)
+        let remotePath = currentPath + name
+        do {
+            try await FTPService.upload(profile: profile, localURL: tmp, remotePath: remotePath)
+            try? FileManager.default.removeItem(at: tmp)
+            await loadDirectory(path: currentPath)
+        } catch {
+            try? FileManager.default.removeItem(at: tmp)
+            errorMessage = error.localizedDescription
+        }
+    }
 
     func createDirectory(name: String) async {
         guard let profile = selectedProfile else { return }
