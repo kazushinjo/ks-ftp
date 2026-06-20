@@ -248,11 +248,17 @@ struct FTPService {
     static func parseDirectoryListing(output: String, basePath: String) -> [RemoteFile] {
         let lines = output.components(separatedBy: "\n").filter { !$0.isEmpty }
         var files: [RemoteFile] = []
+        // Deduplicate by NFC-normalized path: Linux ext4 stores filenames as raw bytes,
+        // so NFC and NFD variants of the same name appear as separate files.
+        // We normalize to NFC so they collapse into one entry.
+        var seenPaths = Set<String>()
 
         for line in lines {
             guard !line.lowercased().hasPrefix("total") else { continue }
             if let file = parseUnixLine(line, basePath: basePath) {
                 guard file.name != "." && file.name != ".." else { continue }
+                let key = file.path.precomposedStringWithCanonicalMapping
+                guard seenPaths.insert(key).inserted else { continue }
                 files.append(file)
             }
         }
@@ -278,6 +284,7 @@ struct FTPService {
         let day = String(parts[6])
         let yearOrTime = String(parts[7])
         var name = String(parts[8]).trimmingCharacters(in: .whitespacesAndNewlines)
+                                   .precomposedStringWithCanonicalMapping  // NFC normalize
 
         let isSymlink = permissions.hasPrefix("l")
         if isSymlink, let arrowRange = name.range(of: " -> ") {
