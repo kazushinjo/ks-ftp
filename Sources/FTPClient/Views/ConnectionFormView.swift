@@ -49,7 +49,6 @@ struct ConnectionFormView: View {
             Form {
                 Section("接続情報") {
                     TextField("接続名", text: $name)
-                        .textFieldStyle(.roundedBorder)
 
                     Picker("プロトコル", selection: $protocolType) {
                         ForEach(FTPProtocol.allCases) { proto in
@@ -67,24 +66,20 @@ struct ConnectionFormView: View {
                     }
 
                     HStack {
-                        TextField("ホスト名 / IPアドレス", text: $host)
-                            .textFieldStyle(.roundedBorder)
+                        TextField("ホスト / IP", text: $host)
+                            .frame(minWidth: 0)
                         TextField("ポート", text: $port)
-                            .textFieldStyle(.roundedBorder)
-                            .frame(width: 70)
+                            .frame(width: 120)
                     }
                 }
 
                 Section("認証") {
                     TextField("ユーザー名", text: $username)
-                        .textFieldStyle(.roundedBorder)
                     SecureField("パスワード", text: $password)
-                        .textFieldStyle(.roundedBorder)
                 }
 
                 Section("詳細設定") {
                     TextField("初期パス", text: $initialPath)
-                        .textFieldStyle(.roundedBorder)
                 }
 
                 if protocolType == .sftp {

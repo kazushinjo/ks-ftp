@@ -9,21 +9,32 @@ struct SidebarView: View {
         List {
             Section {
                 if appState.profiles.isEmpty {
-                    VStack(spacing: 8) {
-                        Image(systemName: "network.slash")
-                            .font(.title2)
-                            .foregroundStyle(.tertiary)
+                    VStack(spacing: 12) {
+                        let iconPath = Bundle.main.bundlePath + "/Contents/Resources/AppIcon.icns"
+                        let fallbackPath = "/Users/kazuichishinjo/アプリ開発/FTPClient/Resources/AppIcon.icns"
+                        if let icon = NSImage(contentsOfFile: iconPath) ?? NSImage(contentsOfFile: fallbackPath) {
+                            Image(nsImage: icon)
+                                .resizable()
+                                .frame(width: 56, height: 56)
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .shadow(color: .cyan.opacity(0.6), radius: 8, x: 0, y: 0)
+                        }
                         Text("接続先がありません")
                             .font(.caption)
-                            .foregroundStyle(.secondary)
-                        Button("接続を追加") {
+                            .foregroundStyle(.white.opacity(0.6))
+                        Button {
                             showingAddConnection = true
+                        } label: {
+                            Text("接続を追加")
+                                .font(.caption)
+                                .padding(.horizontal, 12)
+                                .padding(.vertical, 5)
                         }
                         .buttonStyle(.bordered)
-                        .font(.caption)
+                        .tint(.cyan)
                     }
                     .frame(maxWidth: .infinity)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 16)
                 } else {
                     ForEach(appState.profiles) { profile in
                         ProfileRow(profile: profile)
@@ -50,9 +61,12 @@ struct SidebarView: View {
                 }
             } header: {
                 Text("接続先")
+                    .foregroundStyle(.white.opacity(0.6))
             }
         }
         .listStyle(.sidebar)
+        .scrollContentBackground(.hidden)
+        .background(Color.black)
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
                 Button {
@@ -88,21 +102,21 @@ private struct ProfileRow: View {
             HStack(spacing: 10) {
                 ZStack {
                     RoundedRectangle(cornerRadius: 6)
-                        .fill(isConnected ? Color.accentColor : Color.secondary.opacity(0.15))
-                        .frame(width: 32, height: 32)
+                        .fill(Color.cyan.opacity(0.35))
+                        .frame(width: 36, height: 36)
                     Image(systemName: profile.protocolType.icon)
-                        .foregroundStyle(isConnected ? .white : .secondary)
-                        .font(.system(size: 14))
+                        .foregroundStyle(.white)
+                        .font(.system(size: 18, weight: .semibold))
                 }
 
                 VStack(alignment: .leading, spacing: 1) {
                     Text(profile.name)
                         .font(.callout)
                         .fontWeight(isConnected ? .semibold : .regular)
-                        .foregroundStyle(.primary)
+                        .foregroundStyle(.white)
                     Text("\(profile.protocolType.rawValue)  \(profile.host)")
                         .font(.caption)
-                        .foregroundStyle(.secondary)
+                        .foregroundStyle(.white.opacity(0.6))
                         .lineLimit(1)
                 }
 
@@ -114,6 +128,12 @@ private struct ProfileRow: View {
                         .frame(width: 7, height: 7)
                 }
             }
+            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.cyan.opacity(isConnected ? 0.35 : 0.15))
+            )
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)

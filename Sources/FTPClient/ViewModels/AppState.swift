@@ -25,6 +25,7 @@ class AppState: ObservableObject {
     private var pathHistory: [String] = ["/"]
     private var historyIndex: Int = 0
     private let profilesKey = "ftp_client_profiles_v1"
+    private let defaults = UserDefaults(suiteName: "com.kazuichishinjo.FTPClient") ?? .standard
 
     var canGoBack: Bool { historyIndex > 0 }
     var canGoForward: Bool { historyIndex < pathHistory.count - 1 }
@@ -45,7 +46,7 @@ class AppState: ObservableObject {
     // MARK: - Profile Management
 
     func loadProfiles() {
-        if let data = UserDefaults.standard.data(forKey: profilesKey),
+        if let data = defaults.data(forKey: profilesKey),
            let decoded = try? JSONDecoder().decode([ConnectionProfile].self, from: data) {
             profiles = decoded
         }
@@ -53,7 +54,7 @@ class AppState: ObservableObject {
 
     private func saveProfiles() {
         if let data = try? JSONEncoder().encode(profiles) {
-            UserDefaults.standard.set(data, forKey: profilesKey)
+            defaults.set(data, forKey: profilesKey)
         }
     }
 
