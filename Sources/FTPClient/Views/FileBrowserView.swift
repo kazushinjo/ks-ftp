@@ -7,7 +7,6 @@ struct FileBrowserView: View {
     @State private var isDropTarget = false
     @State private var sortOrder = [KeyPathComparator(\RemoteFile.name)]
 
-    // 現在選択中のディレクトリファイル（なければnil）
     private var selectedDirectoryFile: RemoteFile? {
         guard let id = appState.remoteSelectedFiles.first,
               let file = appState.remoteFiles.first(where: { $0.id == id }),
@@ -67,6 +66,53 @@ struct FileBrowserView: View {
         Task { await appState.deleteItems(toDelete) }
     }
 
+    // MARK: - Context Menu
+
+    private func buildContextMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let selected = appState.remoteSelectedFiles
+        let selectedFiles = appState.remoteFiles.filter { selected.contains($0.id) }
+        let hasSelection = !selected.isEmpty
+
+        // --- ダウンロード（主要アクション・最上位）---
+        if hasSelection {
+            menu.addItem(makeMenuItem(title: "ダウンロード") {
+                Task { await appState.downloadFiles(selectedFiles) }
+            })
+        } else {
+            menu.addItem(makeDisabledMenuItem(title: "ダウンロード"))
+        }
+
+        menu.addItem(.separator())
+
+        // --- 選択時のみ表示 ---
+        if hasSelection, let file = selectedFiles.first, file.isDirectory {
+            menu.addItem(makeMenuItem(title: "開く") { appState.openItem(file) })
+        }
+
+        menu.addItem(.separator())
+
+        // --- 作成 ---
+        menu.addItem(makeMenuItem(title: "新規フォルダ") { showCreateFolderDialog() })
+        menu.addItem(makeMenuItem(title: "新規ファイル") { showCreateFileDialog() })
+
+        menu.addItem(.separator())
+
+        // --- 削除 ---
+        if hasSelection {
+            menu.addItem(makeMenuItem(title: "削除", isDestructive: true) {
+                showDeleteConfirmDialog()
+            })
+        } else {
+            menu.addItem(makeDisabledMenuItem(title: "削除"))
+        }
+
+        return menu
+    }
+
+    // MARK: - Body
+
     var body: some View {
         VStack(spacing: 0) {
             toolbar
@@ -83,7 +129,6 @@ struct FileBrowserView: View {
             } else {
                 fileTable
             }
-
         }
         .navigationTitle(appState.selectedProfile?.name ?? "")
     }
@@ -124,13 +169,11 @@ struct FileBrowserView: View {
             Divider().frame(height: 20)
 
             Group {
-                // 開く（フォルダ選択時に有効）
                 Button(action: { openSelectedDirectory() }) {
                     Label("開く", systemImage: "arrow.right.circle")
                 }
                 .disabled(selectedDirectoryFile == nil)
 
-                // ダウンロード（ファイル選択時に有効）
                 Button(action: {
                     let files = appState.remoteFiles.filter { appState.remoteSelectedFiles.contains($0.id) }
                     Task { await appState.downloadFiles(files) }
@@ -155,7 +198,6 @@ struct FileBrowserView: View {
                 }
             }
             .buttonStyle(.borderless)
-
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 7)
@@ -184,93 +226,73 @@ struct FileBrowserView: View {
     // MARK: - File Table
 
     private var fileTable: some View {
-        Group {
-            if appState.remoteFiles.isEmpty {
-                emptyState
-            } else {
-                Table(appState.remoteFiles, selection: $appState.remoteSelectedFiles, sortOrder: $sortOrder) {
-                    TableColumn("名前", value: \.name) { file in
-                        HStack(spacing: 6) {
-                            Image(systemName: file.systemIcon)
-                                .foregroundStyle(file.isDirectory ? .blue : .secondary)
-                                .frame(width: 18)
-                            Text(file.name)
-                                .lineLimit(1)
-                            if file.isSymlink {
-                                Text("リンク")
-                                    .font(.caption2)
-                                    .padding(.horizontal, 4)
-                                    .background(Color.secondary.opacity(0.2))
-                                    .cornerRadius(3)
-                            }
-                        }
-                    }
-                    .width(min: 160, ideal: 280)
+        if appState.remoteFiles.isEmpty {
+            AnyView(emptyState)
+        } else {
+            AnyView(remoteTable)
+        }
+    }
 
-                    TableColumn("サイズ", value: \.size) { file in
-                        Text(file.sizeFormatted)
-                            .foregroundStyle(.secondary)
-                            .frame(maxWidth: .infinity, alignment: .trailing)
+    private var remoteTable: some View {
+        Table(appState.remoteFiles, selection: $appState.remoteSelectedFiles, sortOrder: $sortOrder) {
+            TableColumn("名前", value: \.name) { file in
+                HStack(spacing: 6) {
+                    Image(systemName: file.systemIcon)
+                        .foregroundStyle(file.isDirectory ? .blue : .secondary)
+                        .frame(width: 18)
+                    Text(file.name)
+                        .lineLimit(1)
+                    if file.isSymlink {
+                        Text("リンク")
+                            .font(.caption2)
+                            .padding(.horizontal, 4)
+                            .background(Color.secondary.opacity(0.2))
+                            .cornerRadius(3)
                     }
-                    .width(80)
+                }
+            }
+            .width(min: 160, ideal: 280)
 
-                    TableColumn("更新日時") { file in
-                        if let d = file.modifiedDate {
-                            Text(d, style: .date)
-                                .foregroundStyle(.secondary)
-                        } else {
-                            Text("--").foregroundStyle(.tertiary)
-                        }
-                    }
-                    .width(100)
+            TableColumn("サイズ", value: \.size) { file in
+                Text(file.sizeFormatted)
+                    .foregroundStyle(.secondary)
+                    .frame(maxWidth: .infinity, alignment: .trailing)
+            }
+            .width(80)
 
-                    TableColumn("パーミッション") { file in
-                        Text(file.permissions)
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                    }
-                    .width(100)
+            TableColumn("更新日時") { file in
+                if let d = file.modifiedDate {
+                    Text(d, style: .date)
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text("--").foregroundStyle(.tertiary)
                 }
-                .onChange(of: sortOrder) { _, newOrder in
-                    appState.remoteFiles.sort(using: newOrder)
-                }
-                .background(DoubleClickHandler(onDoubleClick: openSelectedDirectory))
-                .background(RightClickHandler {
-                    let menu = NSMenu()
-                    menu.addItem(makeMenuItem(title: "新規フォルダ") { showCreateFolderDialog() })
-                    menu.addItem(makeMenuItem(title: "新規ファイル") { showCreateFileDialog() })
-                    let selected = appState.remoteSelectedFiles
-                    if !selected.isEmpty {
-                        let files = appState.remoteFiles.filter { selected.contains($0.id) }
-                        menu.addItem(.separator())
-                        if let file = files.first, file.isDirectory {
-                            menu.addItem(makeMenuItem(title: "開く") { appState.openItem(file) })
-                        }
-                        if files.contains(where: { !$0.isDirectory }) {
-                            menu.addItem(makeMenuItem(title: "ダウンロード") {
-                                Task { await appState.downloadFiles(files) }
-                            })
-                        }
-                        menu.addItem(.separator())
-                        menu.addItem(makeMenuItem(title: "削除", isDestructive: true) {
-                            showDeleteConfirmDialog()
-                        })
-                    }
-                    return menu
-                })
-                .dropDestination(for: URL.self) { urls, _ in
-                    Task { await appState.uploadFiles(urls) }
-                    return true
-                } isTargeted: { targeted in
-                    isDropTarget = targeted
-                }
-                .overlay {
-                    if isDropTarget {
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(Color.accentColor, lineWidth: 3)
-                            .background(Color.accentColor.opacity(0.08).cornerRadius(8))
-                    }
-                }
+            }
+            .width(100)
+
+            TableColumn("パーミッション") { file in
+                Text(file.permissions)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary)
+            }
+            .width(100)
+        }
+        .onChange(of: sortOrder) { _, newOrder in
+            appState.remoteFiles.sort(using: newOrder)
+        }
+        .background(DoubleClickHandler(onDoubleClick: openSelectedDirectory))
+        .background(RightClickHandler { buildContextMenu() })
+        .dropDestination(for: URL.self) { urls, _ in
+            Task { await appState.uploadFiles(urls) }
+            return true
+        } isTargeted: { targeted in
+            isDropTarget = targeted
+        }
+        .overlay {
+            if isDropTarget {
+                RoundedRectangle(cornerRadius: 8)
+                    .stroke(Color.accentColor, lineWidth: 3)
+                    .background(Color.accentColor.opacity(0.08).cornerRadius(8))
             }
         }
     }
@@ -287,6 +309,7 @@ struct FileBrowserView: View {
                 .foregroundStyle(.tertiary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RightClickHandler { buildContextMenu() })
         .dropDestination(for: URL.self) { urls, _ in
             Task { await appState.uploadFiles(urls) }
             return true

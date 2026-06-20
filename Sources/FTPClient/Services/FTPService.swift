@@ -54,6 +54,10 @@ struct FTPService {
         let user = profile.username.addingPercentEncoding(withAllowedCharacters: .urlUserAllowed) ?? profile.username
         let pass = profile.password.addingPercentEncoding(withAllowedCharacters: .urlPasswordAllowed) ?? profile.password
         let trimmed = path.trimmingCharacters(in: .whitespaces)
+        // 空パス = サーバーのホームディレクトリ（URL にパスを付けない）
+        if trimmed.isEmpty {
+            return "\(profile.protocolType.scheme)://\(user):\(pass)@\(profile.host):\(profile.port)"
+        }
         let normalizedPath = trimmed.hasPrefix("/") ? trimmed : "/" + trimmed
         let encodedPath = normalizedPath.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed) ?? normalizedPath
         return "\(profile.protocolType.scheme)://\(user):\(pass)@\(profile.host):\(profile.port)\(encodedPath)"

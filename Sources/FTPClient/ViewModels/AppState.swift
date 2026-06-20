@@ -82,7 +82,9 @@ class AppState: ObservableObject {
     func connect(to profile: ConnectionProfile) async {
         selectedProfile = profile
         let raw = profile.initialPath.trimmingCharacters(in: .whitespaces)
-        let startPath = raw.isEmpty ? "/" : raw
+        // 空のとき "" を渡すと FTPService が URL にパスを付けず、
+        // curl はサーバーのログインディレクトリ（ホーム）を一覧する
+        let startPath = raw.isEmpty ? "" : raw
         pathHistory = [startPath]
         historyIndex = 0
         await loadDirectory(path: startPath)
@@ -108,7 +110,11 @@ class AppState: ObservableObject {
             let files = try await FTPService.listDirectory(profile: profile, path: path)
             remoteFiles = files
             remoteSelectedFiles = []
-            currentPath = path.hasSuffix("/") ? path : path + "/"
+            if path.isEmpty {
+                currentPath = "/"
+            } else {
+                currentPath = path.hasSuffix("/") ? path : path + "/"
+            }
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -229,25 +235,59 @@ class AppState: ObservableObject {
 
     // MARK: - Transfers
 
-    // Download remote files to the current local folder
+    // Download remote files/folders to the current local folder
     func downloadFiles(_ files: [RemoteFile]) async {
         guard let profile = selectedProfile else { return }
         let destURL = localCurrentURL
 
-        for file in files where !file.isDirectory {
-            let idx = transfers.count
-            transfers.append(TransferItem(name: file.name, isUpload: false, status: .inProgress))
-
-            let localURL = destURL.appendingPathComponent(file.name)
-            do {
-                try await FTPService.download(profile: profile, remotePath: file.path, localURL: localURL)
-                transfers[idx].status = .completed
-                transfers[idx].progress = 1.0
-            } catch {
-                transfers[idx].status = .failed(error)
+        for file in files {
+            if file.isDirectory {
+                await downloadDirectoryRecursive(remoteFile: file, localDestURL: destURL, profile: profile)
+            } else {
+                let idx = transfers.count
+                transfers.append(TransferItem(name: file.name, isUpload: false, status: .inProgress))
+                let localURL = destURL.appendingPathComponent(file.name)
+                do {
+                    try await FTPService.download(profile: profile, remotePath: file.path, localURL: localURL)
+                    transfers[idx].status = .completed
+                    transfers[idx].progress = 1.0
+                } catch {
+                    transfers[idx].status = .failed(error)
+                }
             }
         }
         loadLocalDirectory(url: localCurrentURL)
+    }
+
+    private func downloadDirectoryRecursive(remoteFile: RemoteFile, localDestURL: URL, profile: ConnectionProfile) async {
+        let localDirURL = localDestURL.appendingPathComponent(remoteFile.name)
+        do {
+            try FileManager.default.createDirectory(at: localDirURL, withIntermediateDirectories: true)
+        } catch {
+            errorMessage = "フォルダ作成に失敗しました: \(remoteFile.name): \(error.localizedDescription)"
+            return
+        }
+        do {
+            let contents = try await FTPService.listDirectory(profile: profile, path: remoteFile.path)
+            for item in contents {
+                if item.isDirectory {
+                    await downloadDirectoryRecursive(remoteFile: item, localDestURL: localDirURL, profile: profile)
+                } else {
+                    let idx = transfers.count
+                    transfers.append(TransferItem(name: item.name, isUpload: false, status: .inProgress))
+                    let localURL = localDirURL.appendingPathComponent(item.name)
+                    do {
+                        try await FTPService.download(profile: profile, remotePath: item.path, localURL: localURL)
+                        transfers[idx].status = .completed
+                        transfers[idx].progress = 1.0
+                    } catch {
+                        transfers[idx].status = .failed(error)
+                    }
+                }
+            }
+        } catch {
+            errorMessage = "ディレクトリ一覧の取得に失敗しました: \(remoteFile.path): \(error.localizedDescription)"
+        }
     }
 
     func uploadFiles(_ localURLs: [URL]) async {
@@ -257,20 +297,25 @@ class AppState: ObservableObject {
         defer { isUploading = false }
 
         for localURL in localURLs {
-            // NFC normalize: macOS FileManager returns NFD paths, but Linux FTP servers
-            // store filenames as NFC. Without normalization, the same filename gets
-            // different byte sequences, creating duplicate entries on the server.
-            let remoteName = localURL.lastPathComponent.precomposedStringWithCanonicalMapping
-            let remotePath = currentPath + remoteName
-            let idx = transfers.count
-            transfers.append(TransferItem(name: remoteName, isUpload: true, status: .inProgress))
-
-            do {
-                try await FTPService.upload(profile: profile, localURL: localURL, remotePath: remotePath)
-                transfers[idx].status = .completed
-                transfers[idx].progress = 1.0
-            } catch {
-                transfers[idx].status = .failed(error)
+            var isDir: ObjCBool = false
+            FileManager.default.fileExists(atPath: localURL.path, isDirectory: &isDir)
+            if isDir.boolValue {
+                await uploadDirectoryRecursive(localURL: localURL, remoteBasePath: currentPath, profile: profile)
+            } else {
+                // NFC normalize: macOS FileManager returns NFD paths, but Linux FTP servers
+                // store filenames as NFC. Without normalization, the same filename gets
+                // different byte sequences, creating duplicate entries on the server.
+                let remoteName = localURL.lastPathComponent.precomposedStringWithCanonicalMapping
+                let remotePath = currentPath + remoteName
+                let idx = transfers.count
+                transfers.append(TransferItem(name: remoteName, isUpload: true, status: .inProgress))
+                do {
+                    try await FTPService.upload(profile: profile, localURL: localURL, remotePath: remotePath)
+                    transfers[idx].status = .completed
+                    transfers[idx].progress = 1.0
+                } catch {
+                    transfers[idx].status = .failed(error)
+                }
             }
         }
 
@@ -278,11 +323,43 @@ class AppState: ObservableObject {
         await loadDirectory(path: currentPath)
     }
 
-    // Upload currently selected local files to remote
+    private func uploadDirectoryRecursive(localURL: URL, remoteBasePath: String, profile: ConnectionProfile) async {
+        let dirName = localURL.lastPathComponent.precomposedStringWithCanonicalMapping
+        let remoteDirPath = remoteBasePath + dirName
+        do {
+            try await FTPService.createDirectory(profile: profile, path: remoteDirPath)
+        } catch {
+            errorMessage = "フォルダ作成に失敗しました: \(dirName): \(error.localizedDescription)"
+            return
+        }
+        let fm = FileManager.default
+        guard let contents = try? fm.contentsOfDirectory(at: localURL, includingPropertiesForKeys: [.isDirectoryKey], options: [.skipsHiddenFiles]) else { return }
+        for itemURL in contents {
+            var isDir: ObjCBool = false
+            fm.fileExists(atPath: itemURL.path, isDirectory: &isDir)
+            if isDir.boolValue {
+                await uploadDirectoryRecursive(localURL: itemURL, remoteBasePath: remoteDirPath + "/", profile: profile)
+            } else {
+                let remoteName = itemURL.lastPathComponent.precomposedStringWithCanonicalMapping
+                let remotePath = remoteDirPath + "/" + remoteName
+                let idx = transfers.count
+                transfers.append(TransferItem(name: remoteName, isUpload: true, status: .inProgress))
+                do {
+                    try await FTPService.upload(profile: profile, localURL: itemURL, remotePath: remotePath)
+                    transfers[idx].status = .completed
+                    transfers[idx].progress = 1.0
+                } catch {
+                    transfers[idx].status = .failed(error)
+                }
+            }
+        }
+    }
+
+    // Upload currently selected local files/folders to remote
     func uploadSelectedLocalFiles() async {
         guard selectedProfile != nil else { return }
         let urls = localFiles
-            .filter { localSelectedFiles.contains($0.id) && !$0.isDirectory }
+            .filter { localSelectedFiles.contains($0.id) }
             .map { $0.url }
         guard !urls.isEmpty else { return }
         await uploadFiles(urls)
@@ -291,9 +368,9 @@ class AppState: ObservableObject {
     func showUploadPanel() async {
         let panel = NSOpenPanel()
         panel.canChooseFiles = true
-        panel.canChooseDirectories = false
+        panel.canChooseDirectories = true
         panel.allowsMultipleSelection = true
-        panel.message = "アップロードするファイルを選択してください"
+        panel.message = "アップロードするファイル・フォルダを選択してください"
         panel.prompt = "アップロード"
         guard panel.runModal() == .OK else { return }
         await uploadFiles(panel.urls)

@@ -20,19 +20,24 @@ struct RightClickHandler: NSViewRepresentable {
             super.init()
             monitor = NSEvent.addLocalMonitorForEvents(matching: .rightMouseDown) { [weak self] event in
                 guard let self else { return event }
+                // ウィンドウに属していない（古い）ビューは無視する
+                guard self.view.window != nil else { return event }
                 let pt = self.view.convert(event.locationInWindow, from: nil)
-                if self.view.bounds.contains(pt) {
-                    let menu = self.buildMenu()
-                    guard menu.numberOfItems > 0 else { return event }
-                    NSMenu.popUpContextMenu(menu, with: event, for: self.view)
-                    return nil
-                }
-                return event
+                guard self.view.bounds.contains(pt) else { return event }
+                let menu = self.buildMenu()
+                guard menu.numberOfItems > 0 else { return event }
+                NSMenu.popUpContextMenu(menu, with: event, for: self.view)
+                return nil
             }
         }
 
         deinit { if let m = monitor { NSEvent.removeMonitor(m) } }
     }
+}
+
+// NSMenuItem with no action (always shown grayed out).
+func makeDisabledMenuItem(title: String) -> NSMenuItem {
+    NSMenuItem(title: title, action: nil, keyEquivalent: "")
 }
 
 // NSMenuItem with a closure action.

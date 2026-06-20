@@ -63,6 +63,51 @@ struct LocalFileBrowserView: View {
         appState.deleteLocalItems(files)
     }
 
+    // MARK: - Context Menu
+
+    private func buildContextMenu() -> NSMenu {
+        let menu = NSMenu()
+
+        let selected = appState.localSelectedFiles
+        let selectedFiles = appState.localFiles.filter { selected.contains($0.id) }
+        let hasSelection = !selected.isEmpty
+
+        // --- アップロード（主要アクション・最上位）---
+        if appState.selectedProfile != nil {
+            if hasSelection {
+                menu.addItem(makeMenuItem(title: "リモートにアップロード") {
+                    Task { await appState.uploadSelectedLocalFiles() }
+                })
+            } else {
+                menu.addItem(makeDisabledMenuItem(title: "リモートにアップロード"))
+            }
+            menu.addItem(.separator())
+        }
+
+        // --- 作成 ---
+        menu.addItem(makeMenuItem(title: "新規フォルダ") { showCreateFolderDialog() })
+        menu.addItem(makeMenuItem(title: "新規ファイル") { showCreateFileDialog() })
+
+        menu.addItem(.separator())
+
+        // --- Finder 表示（選択時のみ）---
+        if hasSelection, let file = selectedFiles.first {
+            menu.addItem(makeMenuItem(title: "Finderで表示") { appState.revealInFinder(file) })
+            menu.addItem(.separator())
+        }
+
+        // --- 削除 ---
+        if hasSelection {
+            menu.addItem(makeMenuItem(title: "ゴミ箱に移動", isDestructive: true) {
+                showDeleteConfirmDialog()
+            })
+        } else {
+            menu.addItem(makeDisabledMenuItem(title: "ゴミ箱に移動"))
+        }
+
+        return menu
+    }
+
     // MARK: - Toolbar
 
     private var toolbar: some View {
@@ -87,7 +132,6 @@ struct LocalFileBrowserView: View {
 
             Divider().frame(height: 20)
 
-            // Path display
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 2) {
                     ForEach(localPathSegments, id: \.path) { seg in
@@ -109,7 +153,6 @@ struct LocalFileBrowserView: View {
 
             Spacer()
 
-            // 選択フォルダを開く
             if !appState.localSelectedFiles.isEmpty,
                let file = appState.localFiles.first(where: { appState.localSelectedFiles.contains($0.id) }),
                file.isDirectory {
@@ -119,7 +162,6 @@ struct LocalFileBrowserView: View {
                 .buttonStyle(.borderless)
             }
 
-            // Upload selected local files to remote
             if appState.selectedProfile != nil {
                 Button(action: { Task { await appState.uploadSelectedLocalFiles() } }) {
                     Label(appState.isUploading ? "アップロード中..." : "アップロード",
@@ -133,13 +175,11 @@ struct LocalFileBrowserView: View {
 
             Divider().frame(height: 20)
 
-            // フォルダ作成
             Button(action: { showCreateFolderDialog() }) {
                 Image(systemName: "folder.badge.plus")
             }
             .buttonStyle(.borderless)
 
-            // 削除（ゴミ箱）
             Button(action: { showDeleteConfirmDialog() }) {
                 Image(systemName: "trash")
                     .foregroundColor(appState.localSelectedFiles.isEmpty ? .secondary : .red)
@@ -188,36 +228,13 @@ struct LocalFileBrowserView: View {
             appState.localFiles = appState.localFiles.sorted(using: newOrder)
         }
         .contextMenu(forSelectionType: String.self) { _ in
-            // empty — right-click handled by RightClickHandler below
         } primaryAction: { ids in
             if let id = ids.first,
                let file = appState.localFiles.first(where: { $0.id == id }) {
                 appState.openLocalItem(file)
             }
         }
-        .background(RightClickHandler {
-            let menu = NSMenu()
-            menu.addItem(makeMenuItem(title: "新規フォルダ") { showCreateFolderDialog() })
-            menu.addItem(makeMenuItem(title: "新規ファイル") { showCreateFileDialog() })
-            let selected = appState.localSelectedFiles
-            if !selected.isEmpty {
-                let files = appState.localFiles.filter { selected.contains($0.id) }
-                menu.addItem(.separator())
-                if let file = files.first {
-                    menu.addItem(makeMenuItem(title: "Finderで表示") { appState.revealInFinder(file) })
-                }
-                if appState.selectedProfile != nil, files.contains(where: { !$0.isDirectory }) {
-                    menu.addItem(makeMenuItem(title: "リモートにアップロード") {
-                        Task { await appState.uploadSelectedLocalFiles() }
-                    })
-                }
-                menu.addItem(.separator())
-                menu.addItem(makeMenuItem(title: "ゴミ箱に移動", isDestructive: true) {
-                    showDeleteConfirmDialog()
-                })
-            }
-            return menu
-        })
+        .background(RightClickHandler { buildContextMenu() })
     }
 
     private var emptyState: some View {
@@ -229,6 +246,7 @@ struct LocalFileBrowserView: View {
                 .foregroundStyle(.secondary)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(RightClickHandler { buildContextMenu() })
     }
 
     // MARK: - Path segments
