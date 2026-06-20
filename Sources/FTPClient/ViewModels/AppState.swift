@@ -12,6 +12,7 @@ class AppState: ObservableObject {
     @Published var isLoading: Bool = false
     @Published var errorMessage: String?
     @Published var transfers: [TransferItem] = []
+    @Published var isUploading: Bool = false
 
     // Remote selection
     @Published var remoteSelectedFiles = Set<String>()
@@ -251,6 +252,9 @@ class AppState: ObservableObject {
 
     func uploadFiles(_ localURLs: [URL]) async {
         guard let profile = selectedProfile else { return }
+        guard !isUploading else { return }
+        isUploading = true
+        defer { isUploading = false }
 
         for localURL in localURLs {
             let remotePath = currentPath + localURL.lastPathComponent

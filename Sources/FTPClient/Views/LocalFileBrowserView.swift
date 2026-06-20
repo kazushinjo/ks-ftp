@@ -120,12 +120,15 @@ struct LocalFileBrowserView: View {
             }
 
             // Upload selected local files to remote
-            if !appState.localSelectedFiles.isEmpty && appState.selectedProfile != nil {
+            if appState.selectedProfile != nil {
                 Button(action: { Task { await appState.uploadSelectedLocalFiles() } }) {
-                    Label("アップロード", systemImage: "arrow.right.to.line")
+                    Label(appState.isUploading ? "アップロード中..." : "アップロード",
+                          systemImage: "arrow.right.to.line")
                 }
                 .buttonStyle(.borderless)
-                .foregroundStyle(Color.accentColor)
+                .foregroundStyle(appState.localSelectedFiles.isEmpty || appState.isUploading
+                    ? Color.secondary : Color.accentColor)
+                .disabled(appState.localSelectedFiles.isEmpty || appState.isUploading)
             }
 
             Divider().frame(height: 20)
