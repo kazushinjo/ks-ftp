@@ -235,32 +235,29 @@ struct FileBrowserView: View {
                     appState.remoteFiles.sort(using: newOrder)
                 }
                 .background(DoubleClickHandler(onDoubleClick: openSelectedDirectory))
-                .contextMenu(forSelectionType: String.self) { ids in
-                    Button("新規フォルダ") { showCreateFolderDialog() }
-                    Button("新規ファイル") { showCreateFileDialog() }
-                    Divider()
-                    let files = appState.remoteFiles.filter { ids.contains($0.id) }
-                    if let file = files.first, file.isDirectory {
-                        Button("開く") { appState.openItem(file) }
-                    }
-                    if !files.filter({ !$0.isDirectory }).isEmpty {
-                        Button("ダウンロード") {
-                            Task { await appState.downloadFiles(files) }
+                .background(RightClickHandler {
+                    let menu = NSMenu()
+                    menu.addItem(makeMenuItem(title: "新規フォルダ") { showCreateFolderDialog() })
+                    menu.addItem(makeMenuItem(title: "新規ファイル") { showCreateFileDialog() })
+                    let selected = appState.remoteSelectedFiles
+                    if !selected.isEmpty {
+                        let files = appState.remoteFiles.filter { selected.contains($0.id) }
+                        menu.addItem(.separator())
+                        if let file = files.first, file.isDirectory {
+                            menu.addItem(makeMenuItem(title: "開く") { appState.openItem(file) })
                         }
-                    }
-                    if !ids.isEmpty {
-                        Divider()
-                        Button("削除", role: .destructive) {
-                            appState.remoteSelectedFiles = ids
+                        if files.contains(where: { !$0.isDirectory }) {
+                            menu.addItem(makeMenuItem(title: "ダウンロード") {
+                                Task { await appState.downloadFiles(files) }
+                            })
+                        }
+                        menu.addItem(.separator())
+                        menu.addItem(makeMenuItem(title: "削除", isDestructive: true) {
                             showDeleteConfirmDialog()
-                        }
+                        })
                     }
-                } primaryAction: { ids in
-                    guard let id = ids.first,
-                          let file = appState.remoteFiles.first(where: { $0.id == id })
-                    else { return }
-                    appState.openItem(file)
-                }
+                    return menu
+                })
                 .dropDestination(for: URL.self) { urls, _ in
                     Task { await appState.uploadFiles(urls) }
                     return true
